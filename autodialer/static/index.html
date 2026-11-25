@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111f35">
+  <title>AutoDialer</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script defer src="/assets/app.js"></script>
+</head>
+<body>
+  <main id="pairing" class="pairing" hidden>
+    <form id="pair-form" class="panel stack">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">⌁</span> AutoDialer</div>
+      <h1>Connect to AutoDialer</h1>
+      <p>Enter the session access code shown on the host computer.</p>
+      <label>Session access code <input name="code" autocomplete="off" autocapitalize="none" required></label>
+      <button class="button primary">Connect</button>
+      <p id="pair-error" class="error" role="alert"></p>
+    </form>
+  </main>
+
+  <div id="workspace" class="workspace" hidden>
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">⌁</span> AutoDialer</div>
+      <nav aria-label="Workspace">
+        <button type="button" data-view="jobs" aria-current="page"><span aria-hidden="true">▤</span> Jobs</button>
+        <button type="button" data-view="workflow"><span aria-hidden="true">◇</span> Workflow</button>
+        <button type="button" data-view="audit"><span aria-hidden="true">◷</span> Audit log</button>
+      </nav>
+      <div class="sidebar-status"><span class="status-dot"></span> Local workspace</div>
+    </aside>
+
+    <main class="content">
+      <div class="topline">
+        <span class="provider"><span class="status-dot"></span> <span id="provider">Simulated IVR</span></span>
+        <span id="engine"></span>
+        <button type="button" id="android-open" class="text-button" hidden>Android access</button>
+      </div>
+      <div id="notice" role="status" aria-live="polite" hidden></div>
+
+      <section id="jobs-view">
+        <header class="page-heading">
+          <div><h1>Verification jobs</h1><p>Run IVR simulations and review the results. Live calling is disabled.</p></div>
+          <div class="actions">
+            <button type="button" id="demo" class="button">Run demo</button>
+            <button type="button" id="import-open" class="button primary">Import destinations</button>
+          </div>
+        </header>
+        <div class="metrics" aria-label="Job totals">
+          <div class="metric"><span>Destinations</span><strong id="total">0</strong></div>
+          <div class="metric"><span>In queue</span><strong id="queue-total">0</strong></div>
+          <div class="metric"><span>Completed</span><strong id="done-total">0</strong></div>
+          <div class="metric"><span>Needs review</span><strong id="review-total">0</strong></div>
+        </div>
+        <div class="job-layout">
+          <section class="panel job-panel">
+            <div class="section-heading"><h2>Jobs</h2><span id="job-count"></span></div>
+            <div id="job-list" class="job-list"></div>
+          </section>
+          <section class="panel details-panel">
+            <div id="empty-detail" class="empty stack">
+              <h2>Start with a simulation</h2>
+              <p>Run the demo to process three synthetic destinations and practice reviewing an unclear response.</p>
+              <button type="button" id="empty-demo" class="button primary">Run demo</button>
+            </div>
+            <div id="job-detail" hidden>
+              <div class="section-heading detail-heading">
+                <div><h2 id="job-title"></h2><p id="job-subtitle"></p></div>
+                <button type="button" id="pause" class="button"></button>
+              </div>
+              <div class="detail-tools">
+                <label>Results <select id="filter">
+                  <option value="">All</option><option value="review">Needs review</option>
+                  <option value="done">Completed</option><option value="queued">Queued</option>
+                  <option value="running">Processing</option><option value="failed">Failed</option>
+                </select></label>
+                <label>Format <select id="format"><option value="csv">CSV</option><option value="txt">TXT</option><option value="xlsx">XLSX</option></select></label>
+                <button type="button" id="export" class="button">Export</button>
+              </div>
+              <div id="records" class="records"></div>
+              <div id="pagination" class="pagination" hidden>
+                <button type="button" id="prev" class="button">Previous</button>
+                <span id="page-number"></span>
+                <button type="button" id="next" class="button">Next</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="workflow-view" hidden>
+        <header class="page-heading"><div><h1>Workflow</h1><p>Choose the IVR keys and phrases used by future imports.</p></div></header>
+        <form id="workflow-form" class="panel editor stack">
+          <div class="form-grid">
+            <label>Workflow name <input name="name" required maxlength="80"></label>
+            <label>Keys to press <input name="digits" maxlength="20" pattern="[0-9*#]*" aria-describedby="digit-help"></label>
+          </div>
+          <p id="digit-help">The simulated verification menu accepts 12. Other sequences return the menu recording.</p>
+          <div class="section-heading slim"><h2>Classification rules</h2><button type="button" id="add-rule" class="button">Add rule</button></div>
+          <p>Enter one literal phrase per line. A response needs review when zero or multiple labels match.</p>
+          <div id="rules" class="stack"></div>
+          <div class="actions"><button class="button primary">Save workflow</button><span id="revision"></span></div>
+        </form>
+      </section>
+
+      <section id="audit-view" hidden>
+        <header class="page-heading"><div><h1>Audit log</h1><p>Review queue, workflow and manual review activity. Times are shown in UTC.</p></div></header>
+        <section class="panel">
+          <div id="audit-events" class="records"></div>
+          <div id="audit-pagination" class="pagination" hidden><button type="button" id="audit-more" class="button">Load older events</button></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="import-dialog">
+    <form id="import-form" class="stack">
+      <h2>Import destinations</h2>
+      <p>Choose a CSV, TXT or XLSX file. Imported jobs start paused. All destinations use the simulator.</p>
+      <label>Destination file <input type="file" name="file" accept=".csv,.txt,.xlsx" required></label>
+      <p class="help-text">Use a destination column and an optional scenario column. Plain TXT also accepts one destination per line.</p>
+      <a href="/assets/sample.csv" download>Download a synthetic sample</a>
+      <p class="error" id="import-error" role="alert" hidden></p>
+      <div class="actions"><button type="button" class="button" data-close>Cancel</button><button class="button primary">Import file</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="review-dialog">
+    <form id="review-form" class="stack">
+      <h2>Review response</h2>
+      <p id="review-context"></p>
+      <blockquote id="review-transcript"></blockquote>
+      <audio id="review-audio" controls hidden></audio>
+      <label>Final result <input name="label" maxlength="60" list="review-labels" required></label>
+      <datalist id="review-labels"></datalist>
+      <label>Review note <textarea name="note" rows="3" maxlength="1500"></textarea></label>
+      <p class="error" id="review-error" role="alert" hidden></p>
+      <div class="actions"><button type="button" class="button" data-close>Cancel</button><button class="button primary">Save review</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="android-dialog">
+    <div class="stack">
+      <h2>Open on Android</h2>
+      <p>On the same trusted private network, open this link in your phone’s browser. The code changes each time AutoDialer starts.</p>
+      <label>Android link <input id="android-link" readonly></label>
+      <div class="actions"><button type="button" class="button" data-close>Close</button></div>
+    </div>
+  </dialog>
+
+  <template id="rule-template">
+    <fieldset class="rule stack">
+      <legend class="rule-legend">Rule</legend><div class="rule-heading"><button type="button" class="text-button remove-rule">Remove rule</button></div>
+      <label>Result label <input class="rule-label" maxlength="60" required></label>
+      <label>Matching phrases <textarea class="rule-phrases" rows="3" required></textarea></label>
+    </fieldset>
+  </template>
+</body>
+</html>

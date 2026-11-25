@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autodialer"
+version = "0.1.0"
+description = "Local-first simulated IVR verification"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.32,<1",
+    "openpyxl>=3.1.5,<4",
+    "filelock>=3.20,<4",
+    "defusedxml>=0.7.1,<1",
+]
+
+[project.optional-dependencies]
+asr = ["faster-whisper>=1.2.1,<2", "av>=14,<19"]
+test = ["pytest>=8,<10", "httpx>=0.28,<1"]
+browser = ["playwright>=1.50,<2"]
+
+[project.scripts]
+autodialer = "autodialer.launcher:main"
+
+[tool.setuptools.packages.find]
+include = ["autodialer*"]
+
+[tool.setuptools.package-data]
+autodialer = ["static/*", "fixtures/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

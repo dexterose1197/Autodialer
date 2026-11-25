@@ -1,0 +1,42 @@
+name: Test AutoDialer
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: python -m pip install -e ".[test]"
+      - run: python -m pytest
+
+  offline-and-browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: python -m pip install -e ".[test,asr,browser]"
+      - run: python -m playwright install --with-deps chromium
+      - run: python packaging/fetch_model.py models/whisper-tiny.en
+        env:
+          HF_HUB_DISABLE_XET: '1'
+      - run: python -m pytest
+        env:
+          HF_HUB_OFFLINE: '1'
+          AUTODIALER_TEST_MODEL: ${{ github.workspace }}/models/whisper-tiny.en

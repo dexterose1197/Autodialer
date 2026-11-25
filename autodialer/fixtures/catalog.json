@@ -1,0 +1,6 @@
+{
+  "confirmed": "Your appointment is confirmed. Thank you.",
+  "action_required": "Please contact the office to update your appointment.",
+  "ambiguous": "We could not determine the status of your request.",
+  "menu": "Please press one for appointments, then two for verification."
+}

@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111f35">
+  <title>AutoDialer · Android demo</title>
+  <style>__STYLES__
+    .demo-content { max-width: 730px; }
+    .demo-actions { padding: 14px 16px; border-top: 1px solid var(--line); }
+    .brand.demo-brand { margin-bottom: 18px; }
+  </style>
+</head>
+<body>
+  <main class="content demo-content">
+    <div class="brand demo-brand"><span class="brand-icon" aria-hidden="true">⌁</span> AutoDialer</div>
+    <div class="topline"><span class="provider"><span class="status-dot"></span> Simulated IVR</span><span>Fixture transcripts</span></div>
+    <header class="page-heading">
+      <div><h1>Verification demo</h1><p>Practice reviewing a prerecorded IVR response. This walkthrough uses three synthetic destinations and runs in your browser.</p></div>
+      <button type="button" id="run" class="button primary">Run demo</button>
+    </header>
+    <div id="notice" role="status" hidden>Review saved.</div>
+    <section class="panel" id="results" hidden>
+      <div class="section-heading"><h2>Synthetic appointment demo</h2></div>
+      <div id="records" class="records"></div>
+      <div class="demo-actions"><button type="button" id="export" class="button">Export CSV</button></div>
+    </section>
+  </main>
+  <dialog id="review">
+    <form class="stack" id="form">
+      <h2>Review response</h2>
+      <blockquote id="transcript"></blockquote>
+      <audio controls preload="none" src="data:audio/wav;base64,__WAV__"></audio>
+      <label>Final result <input name="label" maxlength="60" required></label>
+      <label>Review note <textarea name="note" rows="3" maxlength="1500"></textarea></label>
+      <div class="actions"><button type="button" id="cancel" class="button">Cancel</button><button class="button primary">Save review</button></div>
+    </form>
+  </dialog>
+  <script>
+    "use strict";
+    const fixtures = __RECORDS__;
+    const byId = (id) => document.getElementById(id);
+    const review = byId("review");
+    const form = byId("form");
+    let records = [];
+    function element(tag, text) {
+      const node = document.createElement(tag);
+      node.textContent = text;
+      return node;
+    }
+    function render() {
+      const rows = records.map((record) => {
+        const row = element("article", "");
+        row.className = "record";
+        const heading = element("div", "");
+        heading.className = "record-title";
+        const status = element("span", record.label ? "Completed" : "Needs review");
+        status.className = record.label ? "badge done" : "badge review";
+        heading.append(element("strong", record.destination), status);
+        if (record.label) heading.append(element("strong", record.label));
+        else {
+          const control = element("button", "Review");
+          control.type = "button";
+          control.className = "button";
+          control.addEventListener("click", () => {
+            byId("transcript").textContent = record.transcript;
+            form.reset();
+            review.showModal();
+          });
+          heading.append(control);
+        }
+        row.append(heading, element("p", record.transcript));
+        if (record.note) row.append(element("p", record.note));
+        return row;
+      });
+      byId("records").replaceChildren(...rows);
+    }
+    byId("run").addEventListener("click", () => {
+      records = fixtures.map((record) => ({ ...record }));
+      byId("results").hidden = false;
+      byId("notice").hidden = true;
+      render();
+    });
+    byId("cancel").addEventListener("click", () => review.close());
+    review.addEventListener("close", () => review.querySelector("audio").pause());
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const label = form.elements.label.value.trim();
+      if (!label) {
+        form.elements.label.value = "";
+        form.reportValidity();
+        return;
+      }
+      const record = records.find((entry) => !entry.label);
+      record.label = label;
+      record.note = form.elements.note.value;
+      review.close();
+      render();
+      byId("notice").hidden = false;
+    });
+    function csvCell(value) {
+      const safe = /^[\s]*[=+@-]/.test(value) ? "'" + value : value;
+      return '"' + safe.replaceAll('"', '""') + '"';
+    }
+    byId("export").addEventListener("click", () => {
+      const rows = records.map((record) => [record.destination, record.transcript, record.label, record.note]);
+      const csv = ["destination,transcript,label,review_note", ...rows.map((row) => row.map(csvCell).join(","))];
+      const url = URL.createObjectURL(new Blob(["\uFEFF", csv.join("\r\n")], { type: "text/csv" }));
+      const link = element("a", "");
+      link.href = url;
+      link.download = "autodialer-synthetic-demo.csv";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    });
+  </script>
+</body>
+</html>
