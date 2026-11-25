@@ -3,6 +3,7 @@ import re
 import socket
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -88,26 +89,49 @@ def test_android_viewport_pairs_and_completes_a_demo(browser_host, tmp_path):
         assert not page_errors
 
 
-def test_standalone_android_demo_runs_offline(tmp_path):
-    from pathlib import Path
-
+@pytest.fixture
+def standalone_demo(tmp_path):
     script = Path(__file__).resolve().parents[1] / "packaging" / "build_android_demo.py"
     demo = tmp_path / "demo.html"
     subprocess.run([sys.executable, str(script), "--output", str(demo)], check=True)
+    return demo
+
+
+@pytest.mark.parametrize("scripts_enabled", [True, False], ids=["browser", "scripts-disabled"])
+def test_standalone_android_demo_runs_offline(standalone_demo, tmp_path, scripts_enabled):
     with playwright.sync_playwright() as engine:
-        browser = engine.chromium.launch(executable_path=os.getenv("AUTODIALER_TEST_CHROMIUM"))
+        executable = os.getenv("AUTODIALER_TEST_CHROMIUM")
+        browser = engine.chromium.launch(executable_path=executable)
         page = browser.new_page(viewport={"width": 390, "height": 844}, offline=True,
-                                is_mobile=True, has_touch=True, accept_downloads=True)
-        page.set_content(demo.read_text(encoding="utf-8"))
-        page.get_by_role("button", name="Run demo").click()
-        page.get_by_role("button", name="Review", exact=True).click()
+                                is_mobile=True, has_touch=True, accept_downloads=True,
+                                java_script_enabled=scripts_enabled)
+        if executable:
+            # The system-managed Chromium may block navigation to all local files.
+            page.set_content(standalone_demo.read_text(encoding="utf-8"))
+        else:
+            page.goto(standalone_demo.as_uri())
+        playwright.expect(page.locator("#results")).to_be_hidden()
+        page.get_by_text("Run demo", exact=True).click()
+        playwright.expect(page.locator("#results")).to_be_visible()
+        assert page.locator(".record").count() == 3
+        playwright.expect(page.get_by_text("Needs review", exact=True)).to_be_visible()
+        page.get_by_text("Review", exact=True).click()
         playwright.expect(page.locator("audio")).to_be_visible()
-        page.get_by_label("Final result").fill("Synthetic review")
-        page.get_by_role("button", name="Save review").click()
-        playwright.expect(page.get_by_text("Review saved.")).to_be_visible()
+        if scripts_enabled:
+            page.locator("audio").evaluate("(audio) => audio.load()")
+            page.wait_for_function("document.querySelector('audio').duration > 0")
+            page.get_by_label("Final result").fill("Synthetic review")
+            page.get_by_role("button", name="Save review").click()
+            playwright.expect(page.get_by_text("Review saved.")).to_be_visible()
+        else:
+            playwright.expect(page.get_by_label("Final result")).to_be_hidden()
+        page.get_by_text("View CSV", exact=True).click()
+        playwright.expect(page.locator("#export-text")).to_contain_text("destination,transcript,label,review_note")
         with page.expect_download() as event:
-            page.get_by_role("button", name="Export CSV").click()
+            page.get_by_role("link", name="Export CSV").click()
         export_path = tmp_path / "walkthrough.csv"
         event.value.save_as(export_path)
-        assert "Synthetic review" in export_path.read_text(encoding="utf-8-sig")
+        csv = export_path.read_text(encoding="utf-8-sig")
+        assert "+12025550103" in csv
+        assert ("Synthetic review" in csv) == scripts_enabled
         assert page.evaluate("document.documentElement.scrollWidth === window.innerWidth")

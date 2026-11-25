@@ -8,7 +8,13 @@
   <style>__STYLES__
     .demo-content { max-width: 730px; }
     .demo-actions { padding: 14px 16px; border-top: 1px solid var(--line); }
-    .brand.demo-brand { margin-bottom: 18px; }
+    .brand.demo-brand, .demo-panel { margin-bottom: 18px; }
+    summary.button { display: inline-flex; align-items: center; cursor: pointer; }
+    .demo-panel { margin-top: 12px; }
+    .demo-review { margin-top: 4px; }
+    .review-content { margin-top: 12px; }
+    .review-content audio { width: min(100%, 380px); }
+    .demo-actions pre { font-size: .84rem; white-space: pre-wrap; overflow-wrap: anywhere; }
   </style>
 </head>
 <body>
@@ -16,73 +22,72 @@
     <div class="brand demo-brand"><span class="brand-icon" aria-hidden="true">⌁</span> AutoDialer</div>
     <div class="topline"><span class="provider"><span class="status-dot"></span> Simulated IVR</span><span>Fixture transcripts</span></div>
     <header class="page-heading">
-      <div><h1>Verification demo</h1><p>Practice reviewing a prerecorded IVR response. This walkthrough uses three synthetic destinations and runs in your browser.</p></div>
-      <button type="button" id="run" class="button primary">Run demo</button>
+      <div><h1>Verification demo</h1><p>Practice reviewing a prerecorded IVR response on three synthetic destinations.</p></div>
     </header>
-    <div id="notice" role="status" hidden>Review saved.</div>
-    <section class="panel" id="results" hidden>
-      <div class="section-heading"><h2>Synthetic appointment demo</h2></div>
-      <div id="records" class="records"></div>
-      <div class="demo-actions"><button type="button" id="export" class="button">Export CSV</button></div>
-    </section>
+    <details id="run">
+      <summary class="button primary">Run demo</summary>
+      <section class="panel demo-panel" id="results">
+        <div class="section-heading"><h2>Synthetic appointment demo</h2></div>
+        <div class="records">
+          __COMPLETED_RECORDS__
+          <article class="record" id="review-record">
+            <div class="record-title">
+              <strong>__REVIEW_DESTINATION__</strong>
+              <span id="review-status" class="badge review">Needs review</span>
+              <strong id="review-label" hidden></strong>
+            </div>
+            <p id="review-transcript">__REVIEW_TRANSCRIPT__</p>
+            <p id="review-note" hidden></p>
+            <details class="demo-review" id="review">
+              <summary class="button" id="review-summary">Review</summary>
+              <div class="review-content stack">
+                <audio aria-label="Synthetic IVR response" controls preload="none" src="data:audio/wav;base64,__WAV__"></audio>
+                <p id="review-help">Open this file in a browser with JavaScript enabled to save a practice review.</p>
+                <form class="stack" id="form" hidden>
+                  <label>Final result <input name="label" maxlength="60" required></label>
+                  <label>Review note <textarea name="note" rows="3" maxlength="1500"></textarea></label>
+                  <div class="actions"><button class="button primary">Save review</button></div>
+                </form>
+              </div>
+            </details>
+            <p id="review-feedback" role="status" aria-live="polite"></p>
+          </article>
+        </div>
+        <div class="demo-actions stack">
+          <div class="actions"><a id="export" href="__CSV_URL__" download="autodialer-synthetic-demo.csv">Export CSV</a></div>
+          <details>
+            <summary>View CSV</summary>
+            <pre id="export-text">__CSV_TEXT__</pre>
+          </details>
+        </div>
+      </section>
+    </details>
   </main>
-  <dialog id="review">
-    <form class="stack" id="form">
-      <h2>Review response</h2>
-      <blockquote id="transcript"></blockquote>
-      <audio controls preload="none" src="data:audio/wav;base64,__WAV__"></audio>
-      <label>Final result <input name="label" maxlength="60" required></label>
-      <label>Review note <textarea name="note" rows="3" maxlength="1500"></textarea></label>
-      <div class="actions"><button type="button" id="cancel" class="button">Cancel</button><button class="button primary">Save review</button></div>
-    </form>
-  </dialog>
   <script>
     "use strict";
-    const fixtures = __RECORDS__;
+    const records = __RECORDS__;
     const byId = (id) => document.getElementById(id);
     const review = byId("review");
     const form = byId("form");
-    let records = [];
-    function element(tag, text) {
-      const node = document.createElement(tag);
-      node.textContent = text;
-      return node;
+    const reminder = byId("review-help");
+    const record = records.find((entry) => !entry.label);
+    const exportLink = byId("export");
+    let exportUrl;
+
+    function csvCell(value) {
+      const safe = /^\s*[=+@-]/.test(value) ? "'" + value : value;
+      return '"' + safe.replaceAll('"', '""') + '"';
     }
-    function render() {
-      const rows = records.map((record) => {
-        const row = element("article", "");
-        row.className = "record";
-        const heading = element("div", "");
-        heading.className = "record-title";
-        const status = element("span", record.label ? "Completed" : "Needs review");
-        status.className = record.label ? "badge done" : "badge review";
-        heading.append(element("strong", record.destination), status);
-        if (record.label) heading.append(element("strong", record.label));
-        else {
-          const control = element("button", "Review");
-          control.type = "button";
-          control.className = "button";
-          control.addEventListener("click", () => {
-            byId("transcript").textContent = record.transcript;
-            form.reset();
-            review.showModal();
-          });
-          heading.append(control);
-        }
-        row.append(heading, element("p", record.transcript));
-        if (record.note) row.append(element("p", record.note));
-        return row;
-      });
-      byId("records").replaceChildren(...rows);
+
+    function updateExport() {
+      const rows = records.map((entry) => [entry.destination, entry.transcript, entry.label, entry.note]);
+      const csv = ["destination,transcript,label,review_note", ...rows.map((row) => row.map(csvCell).join(","))].join("\r\n");
+      byId("export-text").textContent = csv;
+      if (exportUrl) URL.revokeObjectURL(exportUrl);
+      exportUrl = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv" }));
+      exportLink.href = exportUrl;
     }
-    byId("run").addEventListener("click", () => {
-      records = fixtures.map((record) => ({ ...record }));
-      byId("results").hidden = false;
-      byId("notice").hidden = true;
-      render();
-    });
-    byId("cancel").addEventListener("click", () => review.close());
-    review.addEventListener("close", () => review.querySelector("audio").pause());
+
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const label = form.elements.label.value.trim();
@@ -91,29 +96,25 @@
         form.reportValidity();
         return;
       }
-      const record = records.find((entry) => !entry.label);
       record.label = label;
       record.note = form.elements.note.value;
-      review.close();
-      render();
-      byId("notice").hidden = false;
+      byId("review-label").textContent = record.label;
+      byId("review-label").hidden = false;
+      byId("review-status").textContent = "Completed";
+      byId("review-status").className = "badge done";
+      byId("review-note").textContent = record.note;
+      byId("review-note").hidden = !record.note;
+      byId("review-summary").textContent = "Edit review";
+      updateExport();
+      review.open = false;
+      byId("review-summary").focus();
+      byId("review-feedback").textContent = "Review saved.";
     });
-    function csvCell(value) {
-      const safe = /^[\s]*[=+@-]/.test(value) ? "'" + value : value;
-      return '"' + safe.replaceAll('"', '""') + '"';
-    }
-    byId("export").addEventListener("click", () => {
-      const rows = records.map((record) => [record.destination, record.transcript, record.label, record.note]);
-      const csv = ["destination,transcript,label,review_note", ...rows.map((row) => row.map(csvCell).join(","))];
-      const url = URL.createObjectURL(new Blob(["\uFEFF", csv.join("\r\n")], { type: "text/csv" }));
-      const link = element("a", "");
-      link.href = url;
-      link.download = "autodialer-synthetic-demo.csv";
-      document.body.append(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    review.addEventListener("toggle", () => {
+      if (!review.open) review.querySelector("audio").pause();
     });
+    form.hidden = false;
+    reminder.hidden = true;
   </script>
 </body>
 </html>

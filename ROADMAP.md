@@ -8,7 +8,7 @@
 
 ## Verification
 
-- Linux with Python 3.12 and Chromium. All 29 tests passed, including real offline Faster Whisper transcription, abrupt subprocess termination and replay, pause/resume during processing, workflow snapshots, review persistence, and CSV/TXT/XLSX round trips. At a 390-pixel viewport, Chromium exercised the paired web app and the standalone offline walkthrough.
+- Linux with Python 3.12 and Chromium. All 30 tests passed, including real offline Faster Whisper transcription, abrupt subprocess termination and replay, pause/resume during processing, workflow snapshots, review persistence, and CSV/TXT/XLSX round trips. At a 390-pixel viewport, Chromium exercised the paired web app and opened the standalone file offline with JavaScript enabled and disabled.
 - Faster Whisper 1.2.1 relies on an audio API removed by PyAV 19. The ASR extra pins PyAV below 19 and the real-model integration test covers the decoding path.
 - A 10,000-record XLSX export and reimport completed in 1.27 seconds in the build workspace.
 - Wine 11 exercised the Windows x64 installer, offline transcription of the synthetic demo, and uninstall while preserving SQLite data. The Wine test used a flat OpenMP topology with affinity disabled because Wine lacks a NUMA function used by the packaged library.

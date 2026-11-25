@@ -13,7 +13,7 @@ The standard shortcut uses Faster Whisper on the CPU. The **AutoDialer – Fixtu
 
 ## Use from Android
 
-For a walkthrough without a Windows computer, download `AutoDialer-Android-demo.html` and open it in a browser that supports local HTML files. Select **Run demo**, review the ambiguous synthetic recording and export a sample CSV. This self-contained version uses the fixture transcripts and resets when you reload. The full app below runs the persistent queue and Faster Whisper.
+For a walkthrough without a Windows computer, download `AutoDialer-Android-demo.html` and open it in a browser that supports local HTML files. Select **Run demo** to see three synthetic results, then select **Review** on the unclear response. The demo opens and shows its sample CSV even in a viewer that disables JavaScript. Use a browser with JavaScript enabled to save a practice review and include it in your export. The demo resets when you reload. The full app below runs the persistent queue and Faster Whisper.
 
 On the Windows host, exit any running AutoDialer instance and open **AutoDialer – Android access (private network)**. If Windows asks about firewall access, allow it for the private network only. In the host interface, select **Android access** to show the link. Open that link in Chrome on your Android device on the same trusted private network. You can also open the host address and enter the session code shown in the Windows console.
 
