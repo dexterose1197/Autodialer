@@ -41,7 +41,7 @@
 
       <section id="jobs-view">
         <header class="page-heading">
-          <div><h1>Verification jobs</h1><p>Run IVR simulations and review the results. Live calling is disabled.</p></div>
+          <div><h1>Verification jobs</h1><p id="jobs-description">Run IVR simulations and review the results. Live calling is disabled.</p></div>
           <div class="actions">
             <button type="button" id="demo" class="button">Run demo</button>
             <button type="button" id="import-open" class="button primary">Import destinations</button>
@@ -134,7 +134,7 @@
       <audio id="review-audio" controls hidden></audio>
       <label>Final result <input name="label" maxlength="60" list="review-labels" required></label>
       <datalist id="review-labels"></datalist>
-      <label>Review note <textarea name="note" rows="3" maxlength="1500"></textarea></label>
+      <label id="local-review-note">Review note <textarea name="note" rows="3" maxlength="1500"></textarea></label>
       <p class="error" id="review-error" role="alert" hidden></p>
       <div class="actions"><button type="button" class="button" data-close>Cancel</button><button class="button primary">Save review</button></div>
     </form>

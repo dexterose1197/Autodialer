@@ -82,7 +82,26 @@ async function connect() {
   if (state.code) sessionStorage.setItem("autodialer-code", state.code);
   value("provider", info.provider);
   value("engine", info.engine === "fixture transcript" ? "Fixture transcripts" : info.engine);
+  state.pilot = info.pilot;
   state.androidUrl = info.android_url;
+  if (info.pilot) {
+    value("jobs-description", "Synthetic pilot. Run and review the bundled demo records.");
+    byId("import-open").hidden = true;
+    document.querySelector('[data-view="workflow"]').hidden = true;
+    const fields = byId("review-form").elements;
+    fields.namedItem("note").disabled = true;
+    const result = element("select");
+    result.name = "label";
+    result.required = true;
+    result.replaceChildren(element("option", "Choose a result"), ...info.review_choices.map((label) => {
+      const option = element("option", label);
+      option.value = label;
+      return option;
+    }));
+    result.options[0].value = "";
+    fields.namedItem("label").replaceWith(result);
+    byId("local-review-note").hidden = true;
+  }
   byId("android-open").hidden = !state.androidUrl;
   byId("pairing").hidden = true;
   byId("workspace").hidden = false;
@@ -258,13 +277,15 @@ async function openReview(job, record) {
   audio.hidden = true;
   dialog.showModal();
   try {
-    const workflow = await json(`workflow/${job.workflow_id}`);
-    if (state.review !== record) return;
-    byId("review-labels").replaceChildren(...workflow.rules.map((rule) => {
-      const option = element("option");
-      option.value = rule.label;
-      return option;
-    }));
+    if (!state.pilot) {
+      const workflow = await json(`workflow/${job.workflow_id}`);
+      if (state.review !== record) return;
+      byId("review-labels").replaceChildren(...workflow.rules.map((rule) => {
+        const option = element("option");
+        option.value = rule.label;
+        return option;
+      }));
+    }
     if (record.fixture) {
       const blob = await (await api(`audio/${record.fixture}`)).blob();
       if (state.review !== record) return;
@@ -376,7 +397,9 @@ byId("review-form").addEventListener("submit", (event) => {
   const record = state.review;
   const inputs = new FormData(event.currentTarget);
   run(async () => {
-    await json(`jobs/${record.job_id}/items/${record.id}/review`, post({ label: inputs.get("label"), note: inputs.get("note") }));
+    const data = { label: inputs.get("label") };
+    if (!state.pilot) data.note = inputs.get("note");
+    await json(`jobs/${record.job_id}/items/${record.id}/review`, post(data));
     byId("review-dialog").close();
     await refreshJobs();
     message("Review saved.");

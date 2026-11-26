@@ -3,7 +3,10 @@ import re
 import socket
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
 
 import pytest
 
@@ -12,21 +15,18 @@ from test_integration import eventually
 playwright = pytest.importorskip("playwright.sync_api")
 
 
-@pytest.fixture
-def browser_host(tmp_path):
+@contextmanager
+def launched_browser_app(tmp_path, *options):
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
     host = subprocess.Popen(
         [sys.executable, "-m", "autodialer.launcher", "--data-dir", str(tmp_path),
-         "--fixture-transcripts", "--no-browser", "--lan", "--port", str(port)],
+         "--fixture-transcripts", "--no-browser", "--port", str(port), *options],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     try:
         line = host.stdout.readline()
-        code = re.search(r"#code=([\w-]+)", line).group(1)
-        from urllib.error import URLError
-        from urllib.request import urlopen
 
         url = f"http://127.0.0.1:{port}/"
 
@@ -38,10 +38,41 @@ def browser_host(tmp_path):
                 return False
 
         eventually(is_ready, timeout=15)
-        yield url, code
+        yield url, line
     finally:
         host.terminate()
         host.communicate(timeout=10)
+
+
+@pytest.fixture
+def browser_host(tmp_path):
+    with launched_browser_app(tmp_path, "--lan") as (url, line):
+        code = re.search(r"#code=([\w-]+)", line).group(1)
+        yield url, code
+
+
+def test_pilot_view_from_android_uses_fixed_review_options(tmp_path):
+    with launched_browser_app(tmp_path, "--pilot-host", "pilot.example.ts.net") as (url, _):
+        with playwright.sync_playwright() as engine:
+            browser = engine.chromium.launch(executable_path=os.getenv("AUTODIALER_TEST_CHROMIUM"))
+            page = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True,
+                                    has_touch=True, accept_downloads=True)
+            page.goto(url)
+            playwright.expect(page.get_by_role("heading", name="Verification jobs")).to_be_visible()
+            playwright.expect(page.locator("#import-open")).to_be_hidden()
+            playwright.expect(page.locator('[data-view="workflow"]')).to_be_hidden()
+            page.locator("#demo").click()
+            page.get_by_role("button", name="Review", exact=True).click()
+            playwright.expect(page.locator("#review-audio")).to_be_visible()
+            playwright.expect(page.get_by_label("Review note")).to_be_hidden()
+            page.get_by_role("combobox", name="Final result").select_option("Unable to verify")
+            page.get_by_role("button", name="Save review").click()
+            playwright.expect(page.get_by_text("Review saved.", exact=True)).to_be_visible()
+            with page.expect_download() as event:
+                page.get_by_role("button", name="Export", exact=True).click()
+            export = tmp_path / "pilot.csv"
+            event.value.save_as(export)
+            assert "Unable to verify" in export.read_text(encoding="utf-8-sig")
 
 
 def test_android_viewport_pairs_and_completes_a_demo(browser_host, tmp_path):

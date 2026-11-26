@@ -45,13 +45,16 @@ def private_address():
 
 def main():
     parser = argparse.ArgumentParser(description="Start the local AutoDialer application.")
-    parser.add_argument("--data-dir", type=Path, default=data_directory())
+    parser.add_argument("--data-dir", type=Path)
+    parser.add_argument("--pilot-host", help="Enable synthetic pilot mode for this Tailscale DNS name.")
     parser.add_argument("--model-dir", type=Path, help="Use Faster Whisper with a local model directory.")
     parser.add_argument("--fixture-transcripts", action="store_true", help="Use the bundled demo transcripts.")
     parser.add_argument("--lan", action="store_true", help="Allow pairing over a trusted private network.")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
+    if args.pilot_host and (args.lan or args.data_dir is None):
+        parser.error("Pilot mode requires an explicit data directory and loopback serving.")
     if args.model_dir and args.fixture_transcripts:
         parser.error("Choose a local model or fixture transcripts.")
     if not 1 <= args.port <= 65535:
@@ -68,8 +71,9 @@ def main():
     android_url = f"http://{address}:{args.port}/{suffix}" if address and not address.startswith("127.") else None
     logging.basicConfig(level=logging.INFO)
     try:
-        app = create_app(args.data_dir / "autodialer.sqlite3", model_dir=model,
-                         access_code=token, android_url=android_url)
+        data_dir = args.data_dir if args.data_dir is not None else data_directory()
+        app = create_app(data_dir / "autodialer.sqlite3", model_dir=model,
+                         access_code=token, android_url=android_url, pilot_host=args.pilot_host)
     except ValueError as error:
         parser.error(str(error))
     print(f"Desktop: {local_url}", flush=True)

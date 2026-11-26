@@ -1,0 +1,123 @@
+name: AutoDialer EC2 pilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Pair Tailscale, deploy this revision, or switch to the previous release
+        type: choice
+        options: [pair, deploy, rollback]
+        required: true
+        default: pair
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autodialer-ec2-pilot
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    if: github.ref == 'refs/heads/main' && inputs.operation == 'deploy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: deploy/ec2/requirements-linux-x64.txt
+      - run: python -m pip install -e ".[test,asr]"
+      - name: Download the pinned model for the release
+        run: python packaging/fetch_model.py models/whisper-tiny.en
+        env:
+          HF_HUB_DISABLE_XET: '1'
+      - name: Test with offline transcription
+        run: python -m pytest
+        env:
+          HF_HUB_OFFLINE: '1'
+          AUTODIALER_TEST_MODEL: ${{ github.workspace }}/models/whisper-tiny.en
+      - name: Assemble the offline Linux bundle
+        run: python deploy/ec2/bundle.py "$GITHUB_SHA" --model-dir models/whisper-tiny.en
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autodialer-ec2-bundle
+          path: dist/ec2/
+          if-no-files-found: error
+          retention-days: 7
+
+  run:
+    needs: bundle
+    if: >-
+      ${{ !cancelled() && github.ref == 'refs/heads/main' &&
+          (needs.bundle.result == 'success' ||
+          (needs.bundle.result == 'skipped' && inputs.operation != 'deploy')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      AWS_ROLE: ${{ vars.EC2_PILOT_ROLE_ARN }}
+      RELEASE_BUCKET: ${{ vars.EC2_PILOT_BUCKET }}
+      INSTANCE_ID: ${{ vars.EC2_PILOT_INSTANCE_ID }}
+      COMMAND_DOCUMENT: ${{ vars.EC2_PILOT_COMMAND_DOCUMENT }}
+      OPERATION: ${{ inputs.operation }}
+      AWS_PAGER: ''
+    steps:
+      - name: Check the four stack outputs are configured
+        run: |
+          for variable in AWS_ROLE RELEASE_BUCKET INSTANCE_ID COMMAND_DOCUMENT; do
+            if [[ -z "${!variable}" ]]; then
+              echo "::error::$variable is missing. Copy the CloudFormation stack outputs to the repository Actions variables."
+              exit 1
+            fi
+          done
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ env.AWS_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: actions/download-artifact@v4
+        if: inputs.operation == 'deploy'
+        with:
+          name: autodialer-ec2-bundle
+          path: bundle
+      - name: Store the release bundle
+        if: inputs.operation == 'deploy'
+        run: |
+          aws s3 cp --only-show-errors "bundle/$GITHUB_SHA.tar.gz" "s3://$RELEASE_BUCKET/releases/$GITHUB_SHA.tar.gz"
+          aws s3 cp --only-show-errors "bundle/$GITHUB_SHA.sha256" "s3://$RELEASE_BUCKET/releases/$GITHUB_SHA.sha256"
+      - name: Run the pilot operation
+        run: |
+          set -euo pipefail
+          release=none
+          if [[ "$OPERATION" == deploy ]]; then
+            release=$GITHUB_SHA
+          fi
+          parameters=$(jq -cn --arg operation "$OPERATION" --arg release "$release" \
+            '{Operation: [$operation], Release: [$release]}')
+          command=$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name "$COMMAND_DOCUMENT" \
+            --parameters "$parameters" --timeout-seconds 900 \
+            --query Command.CommandId --output text)
+          for attempt in {1..185}; do
+            if report=$(aws ssm get-command-invocation --command-id "$command" --instance-id "$INSTANCE_ID" --output json 2>&1); then
+              status=$(jq -er '.Status' <<<"$report")
+              case "$status" in
+                Pending|InProgress|Delayed|Cancelling) ;;
+                *)
+                  jq -r '.StandardOutputContent, .StandardErrorContent' <<<"$report"
+                  [[ "$status" == Success ]]
+                  exit
+                  ;;
+              esac
+            elif [[ "$report" != *InvocationDoesNotExist* ]]; then
+              printf '%s\n' "$report" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "Pilot operation timed out. Systems Manager command ID $command" >&2
+          exit 1

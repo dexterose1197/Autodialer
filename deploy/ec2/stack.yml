@@ -1,0 +1,254 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AutoDialer private, synthetic-only EC2 pilot
+
+Parameters:
+  GitHubRepository:
+    Type: String
+    Default: dexterose1197/AutoDialer
+    AllowedPattern: '[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+'
+    Description: Exact owner/repository slug trusted by GitHub OIDC on main.
+  CreateGitHubOidcProvider:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Set false if token.actions.githubusercontent.com already exists in this account.
+  UbuntuAmi:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+
+Conditions:
+  CreateProvider: !Equals [!Ref CreateGitHubOidcProvider, 'true']
+
+Resources:
+  PilotVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.71.0.0/24
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  InternetAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref PilotVpc
+      InternetGatewayId: !Ref InternetGateway
+  PilotSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref PilotVpc
+      CidrBlock: 10.71.0.0/26
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref PilotVpc
+  OutboundRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PilotRouting:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PilotSubnet
+      RouteTableId: !Ref PublicRouteTable
+  PilotSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Outbound access for Systems Manager and Tailscale
+      VpcId: !Ref PilotVpc
+
+  ReleaseBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpirePilotBundles
+            Prefix: releases/
+            Status: Enabled
+            ExpirationInDays: 14
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 1}
+  ReleaseBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ReleaseBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt ReleaseBucket.Arn
+              - !Sub '${ReleaseBucket.Arn}/*'
+            Condition:
+              Bool: {'aws:SecureTransport': 'false'}
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ec2.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Policies:
+        - PolicyName: ReadPilotReleases
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub '${ReleaseBucket.Arn}/releases/*'
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+  PilotLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref UbuntuAmi
+        InstanceType: t3.medium
+        InstanceInitiatedShutdownBehavior: stop
+        CreditSpecification: {CpuCredits: standard}
+        IamInstanceProfile: {Name: !Ref InstanceProfile}
+        MetadataOptions:
+          HttpTokens: required
+          HttpPutResponseHopLimit: 1
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true
+            Groups: [!Ref PilotSecurityGroup]
+            SubnetId: !Ref PilotSubnet
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeType: gp3
+              VolumeSize: 16
+              Encrypted: true
+              DeleteOnTermination: true
+        UserData:
+          Fn::Base64:
+            Fn::Sub:
+              - |
+                #!/bin/bash
+                set -euo pipefail
+                install -d -m 0755 /etc/autodialer-pilot
+                printf 'RELEASE_BUCKET=%s\nAWS_DEFAULT_REGION=%s\n' '${ReleaseBucket}' '${AWS::Region}' > /etc/autodialer-pilot/stack.env
+                printf '%s' '${Bootstrap}' | base64 -d >/tmp/autodialer-bootstrap
+                printf '%s' '${Control}' | base64 -d >/tmp/autodialer-control
+                bash /tmp/autodialer-bootstrap
+                install -m 0755 /tmp/autodialer-control /usr/local/sbin/autodialer-pilot
+                rm -f /tmp/autodialer-bootstrap /tmp/autodialer-control
+              - Bootstrap: __BOOTSTRAP_BASE64__
+                Control: __CONTROL_BASE64__
+  PilotInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: [OutboundRoute, PilotRouting]
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref PilotLaunchTemplate
+        Version: !GetAtt PilotLaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value: autodialer-pilot
+
+  PilotCommand:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Command
+      DocumentFormat: YAML
+      UpdateMethod: NewVersion
+      Content:
+        schemaVersion: '2.2'
+        description: Pair, deploy, or roll back the AutoDialer pilot.
+        parameters:
+          Operation:
+            type: String
+            interpolationType: ENV_VAR
+            allowedPattern: '^(pair|deploy|rollback)$'
+          Release:
+            type: String
+            default: 'none'
+            interpolationType: ENV_VAR
+            allowedPattern: '^([a-f0-9]{40}|none)$'
+        mainSteps:
+          - action: aws:runShellScript
+            name: ControlPilot
+            inputs:
+              timeoutSeconds: '840'
+              runCommand:
+                - |
+                  #!/bin/bash
+                  set -euo pipefail
+                  for attempt in {1..60}; do
+                      if [[ -x /usr/local/sbin/autodialer-pilot ]]; then
+                          exec /usr/local/sbin/autodialer-pilot "$SSM_Operation" "$SSM_Release"
+                      fi
+                      sleep 5
+                  done
+                  echo "Instance bootstrap did not finish. Check cloud-init output in Systems Manager." >&2
+                  exit 1
+  GitHubProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+  GitHubDeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateProvider
+                - !Ref GitHubProvider
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                'token.actions.githubusercontent.com:aud': sts.amazonaws.com
+                'token.actions.githubusercontent.com:sub': !Sub 'repo:${GitHubRepository}:ref:refs/heads/main'
+      Policies:
+        - PolicyName: DeployAutoDialerPilot
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:PutObject, s3:AbortMultipartUpload]
+                Resource: !Sub '${ReleaseBucket.Arn}/releases/*'
+              - Effect: Allow
+                Action: ssm:SendCommand
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${PilotInstance}'
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:document/${PilotCommand}'
+              - Effect: Allow
+                Action: ssm:GetCommandInvocation
+                Resource: '*'
+
+Outputs:
+  DeploymentRoleArn:
+    Value: !GetAtt GitHubDeploymentRole.Arn
+  ReleaseBucketName:
+    Value: !Ref ReleaseBucket
+  InstanceId:
+    Value: !Ref PilotInstance
+  CommandDocument:
+    Value: !Ref PilotCommand

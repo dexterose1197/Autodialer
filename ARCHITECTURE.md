@@ -20,3 +20,9 @@ SQLite uses WAL, foreign keys and explicit write transactions. Workflow revision
 There is no live provider implementation or runtime selection for one. Audio is selected from a fixed fixture catalog. The transcriber loads a local model directory with offline mode enabled. Runtime serves bundled assets with no external scripts, fonts or services. Optional LAN access requires a random per-launch access code on API requests. LAN access uses private-network HTTP, so the Windows shortcut displays that scope explicitly. Production data belongs on a trusted host and loopback is the default.
 
 Production activation requires authorization, a supported integration and destination rate limits. See [ROADMAP.md](ROADMAP.md).
+
+## Private EC2 pilot
+
+The optional pilot runs one loopback-bound instance behind Tailscale Serve and uses a tagged, owner-only access grant. The pilot registers a restricted review schema, blocks imports and workflow changes, and rejects local-mode SQLite files. A separate database marker also prevents the unrestricted local app from using a pilot database. It uses the same single queue worker and simulator.
+
+CloudFormation defines the instance, encrypted disk, private release bucket, and scoped GitHub OIDC and SSM roles. GitHub Actions builds a hash-checked Linux bundle with a wheelhouse and the local speech model. SSM installs the bundle, checks speech recognition and service health, and keeps the previous release for rollback. The instance stops after seven days. Runtime paths and onboarding are documented in the [EC2 pilot runbook](deploy/ec2/README.md).

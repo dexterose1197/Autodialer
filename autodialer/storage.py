@@ -6,6 +6,7 @@ from pathlib import Path
 from .verification import DEFAULT_WORKFLOW, Workflow
 
 MAX_ATTEMPTS = 3
+PILOT_APPLICATION_ID = 0x4144504C
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS workflows (
     id INTEGER PRIMARY KEY,
@@ -82,12 +83,21 @@ class Store:
         finally:
             conn.close()
 
-    def initialize(self):
+    def initialize(self, *, pilot=False):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as conn:
             conn.execute("PRAGMA journal_mode = WAL")
-            conn.executescript(SCHEMA)
         with self.connection(write=True) as conn:
+            identity = conn.execute("PRAGMA application_id").fetchone()[0]
+            if pilot and identity == 0 and not conn.execute(
+                "SELECT 1 FROM sqlite_schema LIMIT 1"
+            ).fetchone():
+                conn.execute(f"PRAGMA application_id = {PILOT_APPLICATION_ID}")
+                identity = PILOT_APPLICATION_ID
+            if identity != (PILOT_APPLICATION_ID if pilot else 0):
+                raise RuntimeError("This database belongs to a different AutoDialer mode.")
+            for statement in SCHEMA.strip().rstrip(";").split(";"):
+                conn.execute(statement)
             if not conn.execute("SELECT id FROM workflows LIMIT 1").fetchone():
                 self._save_workflow(conn, DEFAULT_WORKFLOW)
 

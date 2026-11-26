@@ -20,3 +20,9 @@
 - The simulator supports one verification menu and English fixtures. Expand the workflow representation when another authorized menu or language is available.
 - Before any live implementation, establish documented authorization for destinations and recording, a supported provider, explicit per-destination and global limits, a credential storage plan, and a provider-specific idempotency/reconciliation design. Add tests that verify the limits and stop behavior before enabling any live transfer.
 - Keep unrestricted LAN or remote access outside this MVP. Any broader deployment requires a transport-security and user-authentication design.
+
+## EC2 synthetic pilot
+
+- Implemented a separate pilot database, fixed review outcomes, the Android browser flow, and an offline Linux release bundle. The pilot API rejects imports, workflow edits, free-text reviews, and attempts to start with a local database.
+- All 34 tests passed with the offline model and Chromium. Locally verified the package hashes, fresh offline install, real Faster Whisper transcription, automatic recovery from an unhealthy deployment, and manual rollback. Static checks passed for CloudFormation and GitHub Actions.
+- The GitHub connection denied private repository creation. AWS account access and Tailscale enrollment are pending. The live stack, Actions deployment and rollback, and a physical Android check are still unverified.

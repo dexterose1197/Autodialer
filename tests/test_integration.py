@@ -195,3 +195,50 @@ def test_real_offline_transcription_completes_through_api(tmp_path, monkeypatch)
         results = client.get(f"{url}/items").json()
         assert [item["status"] for item in results] == ["done", "done", "review"]
         assert all(item["engine"] == "Faster Whisper" and item["transcript"] for item in results)
+
+
+def test_pilot_rejects_non_synthetic_inputs_and_persists_review(tmp_path):
+    db = tmp_path / "pilot.sqlite3"
+    host = "pilot.example.ts.net"
+    private_text = "customer file and note"
+    with client_for(db, pilot_host=host) as client:
+        assert client.get("/api/status", headers={"Host": host}).json()["pilot"] is True
+        assert client.get("/api/status", headers={"Host": "public.example"}).status_code == 400
+        upload = client.post(f"/api/jobs/import?filename={private_text}", content=private_text)
+        assert upload.status_code == 403
+        assert private_text not in upload.text
+        assert client.put("/api/workflow", content=private_text).status_code == 403
+        demo = client.post("/api/jobs/demo")
+        assert demo.status_code == 201
+        assert demo.json()["synthetic"] == 1
+        job_path = f"/api/jobs/{demo.json()['id']}"
+        eventually(lambda: client.get(job_path).json()["review"] == 1)
+        review_id = client.get(f"{job_path}/items?status=review").json()[0]["id"]
+        review = f"{job_path}/items/{review_id}/review"
+        for invalid in [
+            {"label": private_text},
+            {"label": "Confirmed", "note": private_text},
+            {"label": "Confirmed", "extra": private_text},
+        ]:
+            response = client.post(review, json=invalid)
+            assert response.status_code == 422
+            assert private_text not in response.text
+        assert client.post(review, json={"label": "Unable to verify"}).status_code == 200
+
+    with client_for(db, pilot_host=host) as client:
+        assert client.get(job_path).json()["done"] == 3
+        assert b"Unable to verify" in client.get(f"{job_path}/export/csv").content
+        assert client.get("/api/audit").json()[0]["event"] == "item.reviewed"
+
+
+def test_pilot_and_local_databases_cannot_be_interchanged(tmp_path):
+    local = tmp_path / "local.sqlite3"
+    pilot = tmp_path / "pilot.sqlite3"
+    Store(local).initialize()
+    Store(pilot).initialize(pilot=True)
+    with pytest.raises(RuntimeError, match="belongs to a different AutoDialer mode"):
+        with client_for(local, pilot_host="pilot.example.ts.net"):
+            pass
+    with pytest.raises(RuntimeError, match="belongs to a different AutoDialer mode"):
+        with client_for(pilot):
+            pass

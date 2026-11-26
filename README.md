@@ -54,3 +54,7 @@ python -m autodialer.launcher --model-dir models/whisper-tiny.en
 To build the Windows x64 installer, install NSIS 3 and run `python packaging/build_windows.py` from the activated environment. The builder can also use `--model-dir models/whisper-tiny.en`. It verifies the pinned embedded CPython archive, Visual C++ runtime archive and model files. Build inputs are downloaded once and packaged offline. The installer and its SHA-256 file appear in `dist/`. GitHub Actions includes an installer build and a Windows install/run/uninstall smoke test. Run `python packaging/build_android_demo.py` to generate the standalone synthetic demo.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for design details and [ROADMAP.md](ROADMAP.md) for test results and release limits.
+
+## Private AWS pilot
+
+The optional EC2 pilot accepts synthetic jobs and fixed review outcomes only. Open it from Android using Tailscale and Chrome. GitHub Actions and AWS Systems Manager handle releases. The account setup, cost estimate, and start, stop, and cleanup steps are in the [EC2 pilot runbook](deploy/ec2/README.md).
