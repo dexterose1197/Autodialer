@@ -1,8 +1,10 @@
 # AutoDialer EC2 pilot
 
-The private pilot runs on one Ubuntu 24.04 x64 EC2 instance in US East (N. Virginia). Use the Tailscale Android app for connectivity and Chrome for AutoDialer. The server accepts only bundled synthetic jobs and fixed review outcomes. Its SQLite database stays on the instance’s encrypted root volume. The Windows app and local standalone demonstration are available separately.
+The private pilot runs on one headless Ubuntu 24.04 x64 EC2 instance in US East (N. Virginia). Use the Tailscale Android app for connectivity and Chrome for AutoDialer. The server accepts only bundled synthetic jobs and fixed review outcomes. Its SQLite database stays on the instance’s encrypted root volume. The Windows app and local standalone demonstration are available separately.
 
 ## One-time account setup
+
+A connected AWS Core session can provision the stack directly. If EC2 or CloudFormation returns `OptInRequired`, review the account's service activation in AWS before retrying. The console steps below are also available. [AWS service access troubleshooting](https://repost.aws/knowledge-center/error-access-service)
 
 1. Create the empty private GitHub repository `dexterose1197/AutoDialer` and grant the Codex GitHub connection repository access. Codex will publish the existing source to `main` and set the four Actions variables once access is available.
 2. Check whether AWS IAM already lists `token.actions.githubusercontent.com` under **Identity providers**. Open CloudFormation in **US East (N. Virginia)** and use **Create stack**, **Choose an existing template**, and **Upload a template file**. Upload the rendered `AutoDialer-EC2-pilot.yml`, name the stack `autodialer-pilot`, and leave the repository parameter at its default. Set **CreateGitHubOidcProvider** to `false` if the identity provider exists. Review the resource and IAM permission summary, acknowledge IAM resource creation, then create the stack after approving the cost. [CloudFormation console](https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks)
@@ -29,7 +31,9 @@ The repository needs four Actions **variables** for deployment.
 
 ## Cost and implementation details
 
-Using AWS’s published US East T3, gp3, and public IPv4 prices, seven continuous days are estimated at about **$8.16** before tax and transfer. The estimate includes about $7.02 for compute, $0.84 for the public IPv4 address, and $0.30 for 16 GiB of storage. S3 request and storage charges are additional. The proposed $10 target is an estimate allowance, and retained disk and artifacts can incur charges after compute stops. [T3 pricing](https://aws.amazon.com/ec2/instance-types/t3/) · [EBS pricing](https://aws.amazon.com/ebs/pricing/) · [Public IPv4 pricing](https://aws.amazon.com/vpc/pricing/)
+The default is a `t3.small` with 2 vCPUs and 2 GiB of RAM. The local single-worker speech test processed all three demo fixtures and peaked at 239 MiB for the transcription process. The `t3.medium` option has 4 GiB if later tests need more memory. Both sizes use standard CPU credits.
+
+Seven continuous days on the default size are estimated at about **$4.63** in US East (N. Virginia) for compute, 16 GiB of gp3 storage, and one public IPv4 address. S3, transfer, and taxes are additional. Retained disk and artifacts can incur charges after compute stops. [T3 pricing](https://aws.amazon.com/ec2/instance-types/t3/) · [EBS pricing](https://aws.amazon.com/ebs/pricing/) · [Public IPv4 pricing](https://aws.amazon.com/vpc/pricing/)
 
 GitHub OIDC trusts only this repository’s `main` branch. Its deployment role can upload release bundles and invoke one SSM command document on the pilot instance. SSM checks the release and model hashes, installs from the bundled wheelhouse, runs a real offline speech check, and swaps the running release only when that candidate is ready. An unhealthy service triggers a switch back to the previous release. The SQLite database is separate from the release directories.
 

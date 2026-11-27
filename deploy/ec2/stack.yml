@@ -1,5 +1,12 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: AutoDialer private, synthetic-only EC2 pilot
+Description: AutoDialer private synthetic pilot on headless x86-64 Ubuntu
+
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
+  com.aws.cloudformation.Context:
+    ref:
+      - deploy/ec2/README.md
 
 Parameters:
   GitHubRepository:
@@ -12,6 +19,11 @@ Parameters:
     Default: 'true'
     AllowedValues: ['true', 'false']
     Description: Set false if token.actions.githubusercontent.com already exists in this account.
+  PilotInstanceType:
+    Type: String
+    Default: t3.small
+    AllowedValues: [t3.small, t3.medium]
+    Description: 2 GiB for the synthetic pilot, with a 4 GiB option for heavier testing.
   UbuntuAmi:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
@@ -122,7 +134,8 @@ Resources:
     Properties:
       LaunchTemplateData:
         ImageId: !Ref UbuntuAmi
-        InstanceType: t3.medium
+        # The release includes pinned x86-64 Linux wheels.
+        InstanceType: !Ref PilotInstanceType
         InstanceInitiatedShutdownBehavior: stop
         CreditSpecification: {CpuCredits: standard}
         IamInstanceProfile: {Name: !Ref InstanceProfile}

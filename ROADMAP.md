@@ -25,4 +25,4 @@
 
 - Implemented a separate pilot database, fixed review outcomes, the Android browser flow, and an offline Linux release bundle. The pilot API rejects imports, workflow edits, free-text reviews, and attempts to start with a local database.
 - All 34 tests passed with the offline model and Chromium. Locally verified the package hashes, fresh offline install, real Faster Whisper transcription, automatic recovery from an unhealthy deployment, and manual rollback. Static checks passed for CloudFormation and GitHub Actions.
-- The GitHub connection denied private repository creation. AWS account access and Tailscale enrollment are pending. The live stack, Actions deployment and rollback, and a physical Android check are still unverified.
+- The headless Ubuntu template defaults to `t3.small`. The local speech test peaked at 239 MiB for the transcription process. AWS Core authenticated successfully, and EC2 and CloudFormation returned `OptInRequired`, blocking provisioning. GitHub repository access and Tailscale enrollment are pending. The live stack, Actions deployment and rollback, and a physical Android check are still unverified.
