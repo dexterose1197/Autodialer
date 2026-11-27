@@ -1,5 +1,7 @@
 # AutoDialer
 
+Code checker for customized automated phone systems
+
 AutoDialer is a local-first IVR verification simulator. It runs from a Windows computer, and the responsive interface works in a phone browser. A demo contains three synthetic US numbers and prerecorded synthetic IVR prompts. Live calling is disabled throughout this MVP.
 
 ## Start on Windows
