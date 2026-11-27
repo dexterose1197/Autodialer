@@ -11,7 +11,7 @@ Metadata:
 Parameters:
   GitHubRepository:
     Type: String
-    Default: dexterose1197/AutoDialer
+    Default: dexterose1197/Autodialer
     AllowedPattern: '[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+'
     Description: Exact owner/repository slug trusted by GitHub OIDC on main.
   CreateGitHubOidcProvider:

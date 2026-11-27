@@ -108,7 +108,11 @@ jobs:
               case "$status" in
                 Pending|InProgress|Delayed|Cancelling) ;;
                 *)
-                  jq -r '.StandardOutputContent, .StandardErrorContent' <<<"$report"
+                  if [[ "$OPERATION" == pair ]]; then
+                    echo "Tailscale pairing status: $status. Open Systems Manager Run Command in AWS to view command $command."
+                  else
+                    jq -r '.StandardOutputContent, .StandardErrorContent' <<<"$report"
+                  fi
                   [[ "$status" == Success ]]
                   exit
                   ;;
